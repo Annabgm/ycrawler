@@ -9,10 +9,6 @@ import aiohttp
 
 
 LOGGER_FORMAT = '%(asctime)s %(message)s'
-# URL_TEMPLATE = "https://news.ycombinator.com/item?id={}"
-# TOP_STORIES_URL = "https://news.ycombinator.com/"
-# CONCURRENCY = 5
-FETCH_TIMEOUT = 10
 
 parser = argparse.ArgumentParser(
     description='Calculate the number of comments of the top stories in HN.')
@@ -58,8 +54,9 @@ class AsyncCrawler:
     async def load_save_data(self, session, dir, url):
         base_dir, ind = dir
         if ind == 0:
-            ind = ''
-        file_name = '_'.join([base_dir, str(ind)]) + '.html'
+            file_name = 'base_link.html'
+        else:
+            file_name = 'link_{}.html'.format(str(ind))
         save_dir = os.path.join(base_dir, file_name)
         print(save_dir)
         try:
