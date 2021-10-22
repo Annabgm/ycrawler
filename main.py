@@ -31,12 +31,12 @@ log.setLevel(logging.INFO)
 class AsyncCrawler:
     """Provides counting of URL fetches for a particular task.
     """
-    def __init__(self, dir):
+    def __init__(self, dir_base):
         self.state_url = "https://news.ycombinator.com/"
         self.concurrency = 3
-        self.temp_url = "https://news.ycombinator.com/item?id={}"
+        self.temp_url = "item?id={}"
         self.seen_ids = set()
-        self.dir = dir
+        self.dir = dir_base
 
     async def fetch(self, session, url):
         """Fetch a URL using aiohttp returning parsed JSON response.
@@ -51,8 +51,8 @@ class AsyncCrawler:
                 log.error("Error retrieving {}: {}".format(url, e))
                 raise
 
-    async def load_save_data(self, session, dir, url):
-        base_dir, ind = dir
+    async def load_save_data(self, session, dir_id, url):
+        base_dir, ind = dir_id
         if ind == 0:
             file_name = 'base_link.html'
         else:
@@ -71,10 +71,15 @@ class AsyncCrawler:
         """Retrieve data for current post and recursively for all comments.
         """
         start_time = time.time()
-        parent_url = post.find('a', class_='titlelink')
-        urls = [parent_url['href']]
+        parent_el = post.find('a', class_='titlelink')
         post_id = post['id']
-        url_comment = self.temp_url.format(post_id)
+        url_check = self.temp_url.format(post_id)
+        url_comment = (self.state_url+self.temp_url).format(post_id)
+        if url_check == parent_el['href']:
+            urls = [url_comment]
+        else:
+            urls = [parent_el['href']]
+
         try:
             response = await self.fetch(session, url_comment)
         except Exception as e:
@@ -126,7 +131,6 @@ class AsyncCrawler:
 
         return sum(results)
 
-
     async def poll_top_stories_for_comments(self, loop, session, period, limit):
         """Periodically poll for new stories and retrieve number of comments.
         """
@@ -159,6 +163,7 @@ class AsyncCrawler:
             if iteration > 5:
                 break
             await asyncio.sleep(period)
+
 
 async def main(args):
     loop = asyncio.get_event_loop()
