@@ -1,11 +1,14 @@
 import asyncio
+import aiofiles
+import aiohttp
+import async_timeout
 import argparse
 import logging
 import os
 import time
 from bs4 import BeautifulSoup
 
-import aiohttp
+
 
 
 LOGGER_FORMAT = '%(asctime)s %(message)s'
@@ -28,12 +31,18 @@ log = logging.getLogger()
 log.setLevel(logging.INFO)
 
 
+class ConnectExceedNumber(Exception):
+    pass
+
 class AsyncCrawler:
     """Provides counting of URL fetches for a particular task.
     """
     def __init__(self, dir_base):
         self.state_url = "https://news.ycombinator.com/"
         self.concurrency = 3
+        self.fetch_timeout = 10
+        self.fetch_counter = 0
+        self.max_fetch = 5
         self.temp_url = "item?id={}"
         self.seen_ids = set()
         self.dir = dir_base
@@ -43,13 +52,18 @@ class AsyncCrawler:
         As suggested by the aiohttp docs we reuse the session.
         """
         async with asyncio.Semaphore(self.concurrency):
-            try:
-                log.info('scraping %s', url)
-                async with session.get(url) as response:
-                    return await response.text()
-            except Exception as e:
-                log.error("Error retrieving {}: {}".format(url, e))
-                raise
+            async with async_timeout.timeout(self.fetch_timeout):
+                self.max_fetch += 1
+                if self.max_fetch > self.max_fetch:
+                    raise ConnectExceedNumber('Number of connection attempts hit limit {}'.format(self.max_fetch))
+                try:
+                    log.info('Scraping %s', url)
+
+                    async with session.get(url) as response:
+                        return await response.text()
+                except Exception as e:
+                    log.error("Error retrieving {}: {}".format(url, e))
+                    raise
 
     async def load_save_data(self, session, dir_id, url):
         base_dir, ind = dir_id
@@ -58,14 +72,14 @@ class AsyncCrawler:
         else:
             file_name = 'link_{}.html'.format(str(ind))
         save_dir = os.path.join(base_dir, file_name)
-        print(save_dir)
+        log.info('File saved in %s', save_dir)
         try:
             response = await self.fetch(session, url)
         except Exception as e:
             log.error("Error saving comments links: {}".format(e))
             raise
-        with open(save_dir, 'w', encoding='utf8') as file:
-            file.write(response)
+        async with aiofiles.open(save_dir, 'w', encoding='utf8') as file:
+            await file.write(response)
 
     async def find_comments_url(self, loop, session, post):
         """Retrieve data for current post and recursively for all comments.
@@ -91,7 +105,6 @@ class AsyncCrawler:
             link = comm.find_all('a')
             for li in link:
                 urls.append(li['href'])
-        print(urls)
 
         dir_new = os.path.join(self.dir, post_id)
         os.makedirs(dir_new)
